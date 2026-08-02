@@ -89,7 +89,7 @@ npm install -g pm2 typescript ts-node
 
 # Clonar Repositorio
 cd /etc/ || exit 1
-git clone https://github.com/omar-campos/DTunnel.git
+git clone https://github.com/Arecito/DTunnel.git
 cd /etc/DTunnel || exit 1
 
 chmod +x pon poff pmenu backmod 2>/dev/null
