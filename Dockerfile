@@ -9,4 +9,4 @@ RUN node -e "c=require('crypto');console.log('CSRF_SECRET=\"'+c.randomBytes(64).
 RUN npx prisma generate && npx prisma db push
 RUN npx tsc || true
 EXPOSE 8000
-CMD ["pm2-runtime", "start", "ecosystem.config.js"]
+CMD ["sh", "-c", "node create_admin.js; npm start"]
