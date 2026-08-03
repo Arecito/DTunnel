@@ -64,8 +64,8 @@ if [[ $domain =~ $ip_regex ]]; then
   read -r porta
   echo
 else
-  echo "Se detectó un Dominio. Se asignará automáticamente el puerto 80."
-  porta=80
+  echo "Se detectó un Dominio. Se asignará automáticamente el puerto 2086."
+  porta=2086
   echo
 fi
 
