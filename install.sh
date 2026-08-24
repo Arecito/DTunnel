@@ -65,7 +65,7 @@ if [[ $domain =~ $ip_regex ]]; then
   echo
 else
   echo "Se detectó un Dominio. Se asignará automáticamente el puerto 80."
-  porta=80
+  porta=8443
   echo
 fi
 
