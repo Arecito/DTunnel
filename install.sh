@@ -64,8 +64,8 @@ if [[ $domain =~ $ip_regex ]]; then
   read -r porta
   echo
 else
-  echo "Se detectó un Dominio. Se asignará automáticamente el puerto 80."
-  porta=80
+  echo "Se detectó un Dominio. Se asignará automáticamente el puerto 8443."
+  porta=8443
   echo
 fi
 
@@ -150,7 +150,7 @@ echo
 echo "¡PANEL DTUNNEL INSTALADO CON ÉXITO!"
 echo "Dominio/IP configurado: $domain"
 echo "El panel se está ejecutando en el puerto: $porta"
-echo "Prisma Studio disponible en: http://$domain:5656"
+echo "Prisma Studio disponible en: http://$domain:8443"
 echo
 echo "Escriba el comando para gestionar: pmenu"
 echo
