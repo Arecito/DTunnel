@@ -42,20 +42,9 @@
               ></iframe>
 
               <script>
-                document.addEventListener("DOMContentLoaded", function () {
-                  const frame = document.getElementById('prisma-studio-frame');
-                  if (frame) {
-                    const currentHost = window.location.hostname;
-                    
-                    // Si el panel corre bajo HTTPS (Dominio/HAProxy), usa la proxy-route segura /studio/
-                    // Si corre bajo HTTP plano (IP), conecta directo al puerto 5656
-                    if (window.location.protocol === 'https:') {
-                      frame.src = window.location.origin + '/studio/';
-                    } else {
-                      frame.src = 'http://' + currentHost + ':5656/';
-                    }
-                  }
-                });
+                // Detecta automáticamente el Host/IP actual y asigna el src con el puerto 5656
+                const vpsHost = window.location.hostname;
+                document.getElementById('prisma-studio-frame').src = 'http://' + vpsHost + ':5656/';
               </script>
             <% } else { %>
               <div class="p-5 text-center">
