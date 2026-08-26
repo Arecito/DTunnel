@@ -3,40 +3,42 @@
 hacerbackup() {
   clear
   echo "Haciendo copia de seguridad..."
-  cd /etc/DTunnel
-  #rm -r painelbackup > /dev/null
-  #mkdir painelbackup > /dev/null
-  cp prisma/database.db painelbackup
-  cp .env painelbackup
-  zip -r painelbackup.zip painelbackup
-  mv painelbackup.zip /root
+  cd /etc/DTunnel || exit 1
+  mkdir -p painelbackup > /dev/null 2>&1
+  cp prisma/database.db painelbackup/ 2>/dev/null
+  cp .env painelbackup/ 2>/dev/null
+  zip -r painelbackup.zip painelbackup > /dev/null 2>&1
+  mv painelbackup.zip /root/ 2>/dev/null
   echo
   echo "painelbackup.zip guardado en /root"
   echo
-  exit 0
+  read -rp "Presione Enter para continuar..."
+  pmenu
 }
 
 autobackup() {
   clear
-  read -p "¿Desea activar el Auto Backup? (s/n) " atb
-  [[ $atb = @(s|S) ]] && {
+  read -rp "¿Desea activar el Auto Backup? (s/n) " atb
+  [[ $atb =~ ^[sS]$ ]] && {
     echo "Activando...."
     backmod
     echo
     echo "¡Copia de seguridad cada 5 horas activa!"
-    exit 0
+    sleep 3
+    pmenu
   }
   pmenu
 }
 
 removerpanel() {
   clear
-  read -p "¿Desea eliminar el panel? (s/n) " rev
-  [[ $rev = @(s|S) ]] && {
+  read -rp "¿Desea eliminar el panel? (s/n) " rev
+  [[ $rev =~ ^[sS]$ ]] && {
     echo "Eliminando..."
-    poff
-    rm /bin/pon /bin/poff /bin/pmenu /bin/backmod
-    rm -r /etc/DTunnel
+    poff 2>/dev/null
+    pm2 delete PrismaStudio 2>/dev/null
+    rm -f /bin/pon /bin/poff /bin/pmenu /bin/backmod /bin/pupdate 2>/dev/null
+    rm -rf /etc/DTunnel
     echo "¡Eliminado con éxito!"
     exit 0
   }
@@ -45,86 +47,121 @@ removerpanel() {
 
 restaurarbackup() {
   clear
-  [[ ! -e /root/painelbackup.zip ]] && {
+  if [[ ! -e /root/painelbackup.zip ]]; then
     echo "Archivo painelbackup.zip no encontrado en /root"
-    sleep 4
-    menuop
-  }
-  read -p "¿Desea Restaurar la Copia de Seguridad? (s/n) " rapi
-  [[ $rapi = @(s|S) ]] && {
+    sleep 3
+    pmenu
+  fi
+  read -rp "¿Desea Restaurar la Copia de Seguridad? (s/n) " rapi
+  if [[ $rapi =~ ^[sS]$ ]]; then
     echo "Restaurando..."
-    cd /etc/DTunnel
-    rm prisma/database.db
-    rm .env
-    cd /root
-    unzip painelbackup.zip
-    cd painelbackup
-    mv database.db /etc/DTunnel/prisma
-    mv .env /etc/DTunnel
-    cd /root
-    rm -r painelbackup
+    cd /etc/DTunnel || exit 1
+    rm -f prisma/database.db .env
+    cd /root || exit 1
+    unzip -o painelbackup.zip > /dev/null 2>&1
+    cp painelbackup/database.db /etc/DTunnel/prisma/ 2>/dev/null
+    cp painelbackup/.env /etc/DTunnel/ 2>/dev/null
+    rm -rf /root/painelbackup
     pon
     echo
     echo "¡Copia de seguridad restaurada con éxito!"
-    exit 0
-  }
-  [[ $rapi = @(n|N) ]] && {
-    echo "Volviendo al menú"
-    sleep 2
+    sleep 3
     pmenu
-  }
+  fi
   pmenu
 }
 
-#[[ ! -e /etc/DTunnel/src/index.ts ]] && exit 0
+actualizarpanel() {
+  clear
+  echo "=========================================="
+  echo "      ACTUALIZANDO PANEL DTUNNEL          "
+  echo "=========================================="
+  echo
+  if command -v pupdate >/dev/null 2>&1; then
+    pupdate
+  else
+    echo "Ejecutando actualización directa..."
+    cd /etc/DTunnel || exit 1
+    git fetch --all && git reset --hard origin/main
+    npx tsc || true
+    pm2 restart ecosystem.config.js 2>/dev/null || pm2 start ecosystem.config.js
+    pm2 restart PrismaStudio 2>/dev/null || pm2 start "npx prisma studio --port 5656 --hostname 0.0.0.0 --browser none" --name PrismaStudio
+    systemctl restart haproxy 2>/dev/null
+    echo
+    echo "¡Actualización completada!"
+  fi
+  read -rp "Presione Enter para continuar..."
+  pmenu
+}
 
 pmenu() {
   clear
-  echo "Bienvenido/a al Panel DTunnel"
+  echo "=========================================="
+  echo "      BIENVENIDO/A AL PANEL DTUNNEL       "
+  echo "=========================================="
   echo 
-  echo "1. Encender panel"
-  echo "2. Reiniciar panel"
-  echo "3. Apagar panel"
-  echo "4. Hacer copia de seguridad"
-  echo "5. Restaurar copia de seguridad"
-  echo "6. Activar Auto backup"
-  echo "7. Eliminar panel"
-  echo "0. Salir"
-  read -p "> " resp
-  if [[ $resp = "1" ]]; then
-    pon
-    echo "¡Encendido con éxito!"
-    sleep 3
-    pmenu
-  elif [[ $resp = "2" ]]; then
-    clear
-    pon
-    echo "¡Reiniciado con éxito!"
-    sleep 3
-    pmenu
-  elif [[ $resp = "3" ]]; then
-    clear
-    poff
-    echo "¡Apagado con éxito!"
-    sleep 3
-    pmenu
-  elif [[ $resp = "4" ]]; then
-    hacerbackup
-  elif [[ $resp = "5" ]]; then
-    restaurarbackup
-  elif [[ $resp = "6" ]]; then
-    autobackup
-  elif [[ $resp = "7" ]]; then
-    removerpanel
-  elif [[ $resp = "0" ]]; then
-    echo "Saliendo..."
-    exit 0
-  else
-    echo "¡Opción inválida!"
-    sleep 3
-    clear
-    pmenu
-  fi
+  echo " 1. Encender panel"
+  echo " 2. Reiniciar panel"
+  echo " 3. Apagar panel"
+  echo " 4. Hacer copia de seguridad"
+  echo " 5. Restaurar copia de seguridad"
+  echo " 6. Activar Auto backup"
+  echo " 7. 🔄 Actualizar panel (pupdate)"
+  echo " 8. Eliminar panel"
+  echo " 0. Salir"
+  echo "=========================================="
+  read -rp "> " resp
+
+  case $resp in
+    1)
+      pon
+      echo "¡Encendido con éxito!"
+      sleep 3
+      pmenu
+      ;;
+    2)
+      clear
+      pon
+      pm2 restart PrismaStudio 2>/dev/null
+      systemctl restart haproxy 2>/dev/null
+      echo "¡Reiniciado con éxito!"
+      sleep 3
+      pmenu
+      ;;
+    3)
+      clear
+      poff
+      pm2 stop PrismaStudio 2>/dev/null
+      echo "¡Apagado con éxito!"
+      sleep 3
+      pmenu
+      ;;
+    4)
+      hacerbackup
+      ;;
+    5)
+      restaurarbackup
+      ;;
+    6)
+      autobackup
+      ;;
+    7)
+      actualizarpanel
+      ;;
+    8)
+      removerpanel
+      ;;
+    0)
+      echo "Saliendo..."
+      clear
+      exit 0
+      ;;
+    *)
+      echo "¡Opción inválida!"
+      sleep 2
+      pmenu
+      ;;
+  esac
 }
 
 pmenu
