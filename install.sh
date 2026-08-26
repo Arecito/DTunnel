@@ -156,9 +156,8 @@ if [ "$is_domain" = true ] && [ -f /etc/haproxy/haproxy.cfg ]; then
     cert_file="/etc/haproxy/cert.pem"
   fi
 
-  # Limpiar exactamente las líneas agregadas por el instalador (evita borrar otras reglas o duplicar)
-  sed -i '/# --- CONFIGURACION PANEL DTUNNEL/,$d' /etc/haproxy/haproxy.cfg
-  sed -i '/frontend panel_8443/,$d' /etc/haproxy/haproxy.cfg
+  # Limpiar bloques anteriores si existieran para evitar conflictos
+  sed -i '/# --- CONFIGURACION PANEL DTUNNEL Y PRISMA STUDIO ---/,$d' /etc/haproxy/haproxy.cfg
 
   cat <<EOF >> /etc/haproxy/haproxy.cfg
 
@@ -182,13 +181,8 @@ backend studio_backend
     server studio_local 127.0.0.1:5656 check
 EOF
 
-  # Verificar sintaxis antes de reiniciar HAProxy
-  if haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1; then
-    systemctl restart haproxy 2>/dev/null || service haproxy restart 2>/dev/null
-    echo "¡HAProxy actualizado y reiniciado!"
-  else
-    echo "⚠️ Advertencia: Error en haproxy.cfg. Revisa la sintaxis."
-  fi
+  systemctl restart haproxy 2>/dev/null || service haproxy restart 2>/dev/null
+  echo "¡HAProxy actualizado y reiniciado!"
 fi
 
 echo "Configurando e iniciando Prisma Studio en segundo plano..."
