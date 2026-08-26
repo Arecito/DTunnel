@@ -65,7 +65,7 @@ if [[ $domain =~ $ip_regex ]]; then
   read -r porta
   echo
 else
-  echo "Se detectó un Dominio. Se configurará SSL nativo en el puerto 8443."
+  echo "Se detectó un Dominio. Se configurará el pase de tráfico por HAProxy en el puerto 8443."
   porta=8443
   is_domain=true
   echo
@@ -78,9 +78,9 @@ sleep 2
 # Forzar IPv4 en apt-get para evitar cuelgues de red IPv6
 echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
 
-# Actualizar paquetes e instalar dependencias nativas (añadidos nginx y certbot)
+# Actualizar paquetes e instalar dependencias nativas
 apt-get update -y
-apt-get install wget curl zip unzip cron screen git tar build-essential make gcc g++ python3 nginx certbot python3-certbot-nginx -y
+apt-get install wget curl zip unzip cron screen git tar build-essential make gcc g++ python3 -y
 
 # Instalación de Node.js v20 (LTS)
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -100,7 +100,7 @@ mv pon poff pmenu backmod /bin/ 2>/dev/null
 cp .env.example .env 2>/dev/null || touch .env
 
 # Si es un dominio, hacemos que DTunnel corra internamente en el puerto 8085
-# para dejarle a Nginx el puerto 8443 con SSL público.
+# para que HAProxy tome el 8443 y le pase el tráfico.
 app_port=$porta
 if [ "$is_domain" = true ]; then
   app_port=8085
@@ -144,42 +144,35 @@ npx prisma db push
 echo "Compilando proyecto TypeScript..."
 npx tsc || true
 
-# Configuración del Certificado SSL y Nginx si se ingresó un Dominio
-if [ "$is_domain" = true ]; then
-  echo "Obteniendo certificado SSL seguro para $domain..."
-  systemctl stop nginx 2>/dev/null
-  certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d "$domain"
+# Configuración automática de HAProxy si se ingresó un Dominio
+if [ "$is_domain" = true ] && [ -f /etc/haproxy/haproxy.cfg ]; then
+  echo "Integrando regla del panel en HAProxy (Puerto 8443)..."
+  
+  # Buscar un certificado .pem existente que use HAProxy
+  cert_file=$(grep -oE 'crt /[^ ]+' /etc/haproxy/haproxy.cfg | head -n 1 | awk '{print $2}')
 
-  if [ -d "/etc/letsencrypt/live/$domain" ]; then
-    echo "Configurando Nginx como Proxy Inverso en el puerto 8443..."
-    cat <<EOF > /etc/nginx/sites-available/dtunnel
-server {
-    listen 8443 ssl;
-    server_name $domain;
-
-    ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    location / {
-        proxy_pass http://127.0.0.1:8085;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-EOF
-    ln -sf /etc/nginx/sites-available/dtunnel /etc/nginx/sites-enabled/
-    rm -f /etc/nginx/sites-enabled/default 2>/dev/null
-    systemctl restart nginx
-    echo "¡Servidor SSL configurado con éxito en Nginx!"
-  else
-    echo "⚠️ ADVERTENCIA: No se pudo generar el certificado SSL."
-    echo "Asegúrese de que el dominio $domain apunte a esta IP y que la nube en Cloudflare esté en GRIS."
+  if [ -z "$cert_file" ]; then
+    cert_file="/etc/haproxy/cert.pem"
   fi
+
+  # Evitar duplicar la configuración si ya se ejecutó antes
+  if ! grep -q "frontend panel_8443" /etc/haproxy/haproxy.cfg; then
+    cat <<EOF >> /etc/haproxy/haproxy.cfg
+
+# --- CONFIGURACION PANEL DTUNNEL ---
+frontend panel_8443
+    bind *:8443 ssl crt $cert_file
+    mode http
+    default_backend panel_backend
+
+backend panel_backend
+    mode http
+    server dtunnel_local 127.0.0.1:8085 check
+EOF
+  fi
+
+  systemctl restart haproxy 2>/dev/null || service haproxy restart 2>/dev/null
+  echo "¡HAProxy actualizado y reiniciado!"
 fi
 
 echo "Configurando e iniciando Prisma Studio en segundo plano..."
@@ -197,7 +190,7 @@ echo "¡PANEL DTUNNEL INSTALADO CON ÉXITO!"
 echo "Dominio/IP configurado: $domain"
 
 if [ "$is_domain" = true ]; then
-  echo "Acceso seguro al panel: https://$domain:8443"
+  echo "Acceso seguro al panel via HAProxy: https://$domain:8443"
 else
   echo "El panel se está ejecutando en el puerto: http://$domain:$porta"
 fi
