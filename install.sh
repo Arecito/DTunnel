@@ -39,8 +39,6 @@ if [[ -e /etc/DTunnel/src/index.ts ]]; then
     pm2 delete ecosystem.config.js > /dev/null 2>&1
     pm2 delete PrismaStudio > /dev/null 2>&1
     
-    # Eliminar binarios de gestión (incluyendo pupdate)
-    rm -f /bin/pon /bin/poff /bin/pmenu /bin/backmod /bin/pupdate 2>/dev/null
     rm -rf /etc/DTunnel
     rm -f "$0"
     echo "¡Eliminado con éxito! Respaldo guardado en /root/painelbackup.tar.gz"
@@ -96,10 +94,9 @@ cd /etc/ || exit 1
 git clone https://github.com/Arecito/DTunnel.git
 cd /etc/DTunnel || exit 1
 
-# Otorgar permisos y mover comandos a /bin/ (incluyendo pupdate)
-chmod +x pon poff pmenu backmod pupdate 2>/dev/null
-cp pon poff pmenu backmod pupdate /bin/ 2>/dev/null
-chmod +x /bin/pon /bin/poff /bin/pmenu /bin/backmod /bin/pupdate 2>/dev/null
+chmod +x pon poff pmenu backmod 2>/dev/null
+mv pon poff pmenu backmod /bin/ 2>/dev/null
+chmod +x /bin/pon /bin/poff /bin/pmenu /bin/backmod 2>/dev/null
 
 cp .env.example .env 2>/dev/null || touch .env
 
@@ -159,7 +156,7 @@ if [ "$is_domain" = true ] && [ -f /etc/haproxy/haproxy.cfg ]; then
     cert_file="/etc/haproxy/cert.pem"
   fi
 
-  # Limpieza exhaustiva de cualquier bloque previo para evitar duplicaciones
+  # Limpiar exactamente las líneas agregadas por el instalador (evita borrar otras reglas o duplicar)
   sed -i '/# --- CONFIGURACION PANEL DTUNNEL/,$d' /etc/haproxy/haproxy.cfg
   sed -i '/frontend panel_8443/,$d' /etc/haproxy/haproxy.cfg
 
@@ -181,16 +178,16 @@ backend panel_backend
 
 backend studio_backend
     mode http
-    reqrep ^([^\ ]*\ )/studio[/]?(.*) \1/\2
+    http-request replace-path /studio/?(.*) /\1
     server studio_local 127.0.0.1:5656 check
 EOF
 
-  # Validar que la sintaxis de HAProxy sea correcta antes de reiniciar el servicio
+  # Verificar sintaxis antes de reiniciar HAProxy
   if haproxy -c -f /etc/haproxy/haproxy.cfg >/dev/null 2>&1; then
     systemctl restart haproxy 2>/dev/null || service haproxy restart 2>/dev/null
-    echo "¡HAProxy actualizado y reiniciado con éxito!"
+    echo "¡HAProxy actualizado y reiniciado!"
   else
-    echo "⚠️ Advertencia: Error en la sintaxis de HAProxy. No se reinició el servicio para evitar caídas del servidor."
+    echo "⚠️ Advertencia: Error en haproxy.cfg. Revisa la sintaxis."
   fi
 fi
 
@@ -218,6 +215,5 @@ fi
 
 echo
 echo "Escriba el comando para gestionar: pmenu"
-echo "O use directamente: pupdate (para actualizar)"
 echo
 rm -f "$0"
