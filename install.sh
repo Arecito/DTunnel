@@ -57,6 +57,7 @@ read -r domain
 echo
 
 ip_regex="^([0-9]{1,3}\.){3}[0-9]{1,3}$"
+is_domain=false
 
 if [[ $domain =~ $ip_regex ]]; then
   echo "Se detectó una dirección IP."
@@ -64,8 +65,9 @@ if [[ $domain =~ $ip_regex ]]; then
   read -r porta
   echo
 else
-  echo "Se detectó un Dominio. Se asignará automáticamente el puerto 8443."
+  echo "Se detectó un Dominio. Se configurará SSL nativo en el puerto 8443."
   porta=8443
+  is_domain=true
   echo
 fi
 
@@ -76,9 +78,9 @@ sleep 2
 # Forzar IPv4 en apt-get para evitar cuelgues de red IPv6
 echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
 
-# Actualizar paquetes e instalar dependencias nativas
+# Actualizar paquetes e instalar dependencias nativas (añadidos nginx y certbot)
 apt-get update -y
-apt-get install wget curl zip unzip cron screen git tar build-essential make gcc g++ python3 -y
+apt-get install wget curl zip unzip cron screen git tar build-essential make gcc g++ python3 nginx certbot python3-certbot-nginx -y
 
 # Instalación de Node.js v20 (LTS)
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -97,9 +99,16 @@ mv pon poff pmenu backmod /bin/ 2>/dev/null
 
 cp .env.example .env 2>/dev/null || touch .env
 
+# Si es un dominio, hacemos que DTunnel corra internamente en el puerto 8085
+# para dejarle a Nginx el puerto 8443 con SSL público.
+app_port=$porta
+if [ "$is_domain" = true ]; then
+  app_port=8085
+fi
+
 # Guardar variables de entorno
 echo "DOMAIN=$domain" > .env
-echo "PORT=$porta" >> .env
+echo "PORT=$app_port" >> .env
 echo "NODE_ENV=\"production\"" >> .env
 echo "DATABASE_URL=\"file:./database.db\"" >> .env
 
@@ -135,8 +144,45 @@ npx prisma db push
 echo "Compilando proyecto TypeScript..."
 npx tsc || true
 
+# Configuración del Certificado SSL y Nginx si se ingresó un Dominio
+if [ "$is_domain" = true ]; then
+  echo "Obteniendo certificado SSL seguro para $domain..."
+  systemctl stop nginx 2>/dev/null
+  certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email -d "$domain"
+
+  if [ -d "/etc/letsencrypt/live/$domain" ]; then
+    echo "Configurando Nginx como Proxy Inverso en el puerto 8443..."
+    cat <<EOF > /etc/nginx/sites-available/dtunnel
+server {
+    listen 8443 ssl;
+    server_name $domain;
+
+    ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    location / {
+        proxy_pass http://127.0.0.1:8085;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+    ln -sf /etc/nginx/sites-available/dtunnel /etc/nginx/sites-enabled/
+    rm -f /etc/nginx/sites-enabled/default 2>/dev/null
+    systemctl restart nginx
+    echo "¡Servidor SSL configurado con éxito en Nginx!"
+  else
+    echo "⚠️ ADVERTENCIA: No se pudo generar el certificado SSL."
+    echo "Asegúrese de que el dominio $domain apunte a esta IP y que la nube en Cloudflare esté en GRIS."
+  fi
+fi
+
 echo "Configurando e iniciando Prisma Studio en segundo plano..."
-# INTEGRACIÓN DE TU PARTE AQUÍ:
 pm2 delete PrismaStudio 2>/dev/null || true
 pm2 start "npx prisma studio --port 5656 --hostname 0.0.0.0 --browser none" --name PrismaStudio
 
@@ -149,8 +195,14 @@ clear
 echo
 echo "¡PANEL DTUNNEL INSTALADO CON ÉXITO!"
 echo "Dominio/IP configurado: $domain"
-echo "El panel se está ejecutando en el puerto: $porta"
-echo "Prisma Studio disponible en: http://$domain:8443"
+
+if [ "$is_domain" = true ]; then
+  echo "Acceso seguro al panel: https://$domain:8443"
+else
+  echo "El panel se está ejecutando en el puerto: http://$domain:$porta"
+fi
+
+echo "Prisma Studio disponible en: http://$domain:5656"
 echo
 echo "Escriba el comando para gestionar: pmenu"
 echo
