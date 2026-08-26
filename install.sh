@@ -96,6 +96,7 @@ cd /etc/DTunnel || exit 1
 
 chmod +x pon poff pmenu backmod 2>/dev/null
 mv pon poff pmenu backmod /bin/ 2>/dev/null
+chmod +x /bin/pon /bin/poff /bin/pmenu /bin/backmod 2>/dev/null
 
 cp .env.example .env 2>/dev/null || touch .env
 
@@ -146,7 +147,7 @@ npx tsc || true
 
 # Configuración automática de HAProxy si se ingresó un Dominio
 if [ "$is_domain" = true ] && [ -f /etc/haproxy/haproxy.cfg ]; then
-  echo "Integrando regla del panel en HAProxy (Puerto 8443)..."
+  echo "Integrando reglas del Panel y Prisma Studio en HAProxy (Puerto 8443)..."
   
   # Buscar un certificado .pem existente que use HAProxy
   cert_file=$(grep -oE 'crt /[^ ]+' /etc/haproxy/haproxy.cfg | head -n 1 | awk '{print $2}')
@@ -155,21 +156,30 @@ if [ "$is_domain" = true ] && [ -f /etc/haproxy/haproxy.cfg ]; then
     cert_file="/etc/haproxy/cert.pem"
   fi
 
-  # Evitar duplicar la configuración si ya se ejecutó antes
-  if ! grep -q "frontend panel_8443" /etc/haproxy/haproxy.cfg; then
-    cat <<EOF >> /etc/haproxy/haproxy.cfg
+  # Limpiar bloques anteriores si existieran para evitar conflictos
+  sed -i '/# --- CONFIGURACION PANEL DTUNNEL Y PRISMA STUDIO ---/,$d' /etc/haproxy/haproxy.cfg
 
-# --- CONFIGURACION PANEL DTUNNEL ---
+  cat <<EOF >> /etc/haproxy/haproxy.cfg
+
+# --- CONFIGURACION PANEL DTUNNEL Y PRISMA STUDIO ---
 frontend panel_8443
     bind *:8443 ssl crt $cert_file
     mode http
+
+    acl is_studio path_beg /studio
+    use_backend studio_backend if is_studio
+
     default_backend panel_backend
 
 backend panel_backend
     mode http
     server dtunnel_local 127.0.0.1:8085 check
+
+backend studio_backend
+    mode http
+    http-request replace-path /studio/?(.*) /\1
+    server studio_local 127.0.0.1:5656 check
 EOF
-  fi
 
   systemctl restart haproxy 2>/dev/null || service haproxy restart 2>/dev/null
   echo "¡HAProxy actualizado y reiniciado!"
@@ -191,11 +201,12 @@ echo "Dominio/IP configurado: $domain"
 
 if [ "$is_domain" = true ]; then
   echo "Acceso seguro al panel via HAProxy: https://$domain:8443"
+  echo "Acceso seguro a Prisma Studio: https://$domain:8443/studio/"
 else
   echo "El panel se está ejecutando en el puerto: http://$domain:$porta"
+  echo "Prisma Studio disponible en: http://$domain:5656"
 fi
 
-echo "Prisma Studio disponible en: http://$domain:5656"
 echo
 echo "Escriba el comando para gestionar: pmenu"
 echo
