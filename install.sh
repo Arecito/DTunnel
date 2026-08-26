@@ -39,6 +39,8 @@ if [[ -e /etc/DTunnel/src/index.ts ]]; then
     pm2 delete ecosystem.config.js > /dev/null 2>&1
     pm2 delete PrismaStudio > /dev/null 2>&1
     
+    # Eliminar binarios de gestión (incluyendo pupdate)
+    rm -f /bin/pon /bin/poff /bin/pmenu /bin/backmod /bin/pupdate 2>/dev/null
     rm -rf /etc/DTunnel
     rm -f "$0"
     echo "¡Eliminado con éxito! Respaldo guardado en /root/painelbackup.tar.gz"
@@ -94,9 +96,10 @@ cd /etc/ || exit 1
 git clone https://github.com/Arecito/DTunnel.git
 cd /etc/DTunnel || exit 1
 
-chmod +x pon poff pmenu backmod 2>/dev/null
-mv pon poff pmenu backmod /bin/ 2>/dev/null
-chmod +x /bin/pon /bin/poff /bin/pmenu /bin/backmod 2>/dev/null
+# Otorgar permisos y mover comandos a /bin/ (incluyendo pupdate)
+chmod +x pon poff pmenu backmod pupdate 2>/dev/null
+cp pon poff pmenu backmod pupdate /bin/ 2>/dev/null
+chmod +x /bin/pon /bin/poff /bin/pmenu /bin/backmod /bin/pupdate 2>/dev/null
 
 cp .env.example .env 2>/dev/null || touch .env
 
@@ -209,5 +212,6 @@ fi
 
 echo
 echo "Escriba el comando para gestionar: pmenu"
+echo "O use directamente: pupdate (para actualizar)"
 echo
 rm -f "$0"
